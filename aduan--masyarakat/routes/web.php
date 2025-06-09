@@ -7,6 +7,7 @@ use App\Http\Controllers\ReportController;
 use App\Http\Controllers\ArticleController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AdminController;
+use App\Http\Controllers\CommentController;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -27,10 +28,13 @@ Route::middleware(['auth'])->group(function () {
     
     // Reports routes
     Route::resource('reports', ReportController::class);
-    Route::post('/reports/{report}/comments', [ReportController::class, 'storeComment'])->name('reports.comments.store');
     Route::put('/reports/{report}/status', [ReportController::class, 'updateStatus'])->name('reports.update-status')->middleware('admin');
-    Route::get('/reports/{user}', [ReportController::class, 'showUser Reports'])->name('reports.user');
+    Route::get('/reports/files/{fileId}/download', [ReportController::class, 'downloadFile'])->name('reports.download-file');
     
+    // Comments routes
+    Route::post('/reports/{report}/comments', [CommentController::class, 'store'])->name('comments.store');
+    Route::put('/comments/{comment}', [CommentController::class, 'update'])->name('comments.update');
+    Route::delete('/comments/{comment}', [CommentController::class, 'destroy'])->name('comments.destroy');
     
     // Articles routes
     Route::resource('articles', ArticleController::class);
@@ -61,4 +65,5 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     
     // Settings
     Route::get('/settings', [AdminController::class, 'settings'])->name('settings');
+    Route::redirect('/admin', '/admin/dashboard');
 });

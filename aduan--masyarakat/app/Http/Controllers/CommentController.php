@@ -9,36 +9,56 @@ use Illuminate\Support\Facades\Auth;
 
 class CommentController extends Controller
 {
-    public function __construct()
-    {
-        $this->middleware('auth');
-    }
-    
+    /**
+     * Store a newly created comment.
+     */
     public function store(Request $request, Report $report)
     {
         $request->validate([
-            'content' => 'required|string',
+            'content' => 'required|string|max:1000',
         ]);
-        
-        Comment::create([
+
+        $comment = $report->comments()->create([
             'content' => $request->content,
-            'report_id' => $report->id,
             'user_id' => Auth::id(),
         ]);
-        
-        return redirect()->back()->with('success', 'Komentar berhasil ditambahkan!');
+
+        return back()->with('success', 'Komentar berhasil ditambahkan!');
     }
-    
+
+    /**
+     * Update the specified comment.
+     */
+    public function update(Request $request, Comment $comment)
+    {
+        // Check if user owns the comment
+        if ($comment->user_id !== Auth::id()) {
+            abort(403, 'Anda tidak memiliki izin untuk mengedit komentar ini.');
+        }
+
+        $request->validate([
+            'content' => 'required|string|max:1000',
+        ]);
+
+        $comment->update([
+            'content' => $request->content,
+        ]);
+
+        return back()->with('success', 'Komentar berhasil diperbarui!');
+    }
+
+    /**
+     * Remove the specified comment.
+     */
     public function destroy(Comment $comment)
     {
-        $user = Auth::user();
-        
-        // Hanya admin atau pemilik komentar yang bisa menghapus
-        if ($user->isAdmin() || $comment->user_id === $user->id) {
-            $comment->delete();
-            return redirect()->back()->with('success', 'Komentar berhasil dihapus!');
+        // Check if user owns the comment or is admin
+        if ($comment->user_id !== Auth::id() && !Auth::user()->isAdmin()) {
+            abort(403, 'Anda tidak memiliki izin untuk menghapus komentar ini.');
         }
-        
-        return redirect()->back()->with('error', 'Anda tidak memiliki akses untuk menghapus komentar ini.');
+
+        $comment->delete();
+
+        return back()->with('success', 'Komentar berhasil dihapus!');
     }
 }
