@@ -19,12 +19,19 @@
     </div>
 @endif
 
-<!-- Report Details -->
 <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ $report->title }}</h5>
-        <span class="badge bg-{{ $report->status == 'pending' ? 'warning' : ($report->status == 'in-progress' ? 'info' : ($report->status == 'resolved' ? 'success' : 'danger')) }}">
-            {{ $report->status == 'pending' ? 'Menunggu' : ($report->status == 'in-progress' ? 'Diproses' : ($report->status == 'resolved' ? 'Selesai' : 'Ditolak')) }}
+        @php
+            $statusClass = [
+                'pending' => 'warning', 'in-progress' => 'info', 'resolved' => 'success', 'rejected' => 'danger'
+            ];
+            $statusLabel = [
+                'pending' => 'Menunggu', 'in-progress' => 'Diproses', 'resolved' => 'Selesai', 'rejected' => 'Ditolak'
+            ];
+        @endphp
+        <span class="badge bg-{{ $statusClass[$report->status] ?? 'secondary' }}">
+            {{ $statusLabel[$report->status] ?? 'N/A' }}
         </span>
     </div>
     <div class="card-body">
@@ -36,11 +43,6 @@
             </div>
             <div class="col-md-6">
                 <p class="mb-1"><strong>Pelapor:</strong> {{ $report->user->name }}</p>
-                <p class="mb-1"><strong>Status:</strong> 
-                    <span class="badge bg-{{ $report->status == 'pending' ? 'warning' : ($report->status == 'in-progress' ? 'info' : ($report->status == 'resolved' ? 'success' : 'danger')) }}">
-                        {{ $report->status == 'pending' ? 'Menunggu' : ($report->status == 'in-progress' ? 'Diproses' : ($report->status == 'resolved' ? 'Selesai' : 'Ditolak')) }}
-                    </span>
-                </p>
                 @if($report->updated_at->gt($report->created_at))
                 <p class="mb-1"><strong>Terakhir Diperbarui:</strong> {{ $report->updated_at->format('d M Y H:i') }}</p>
                 @endif
@@ -50,23 +52,32 @@
         <h6 class="fw-bold">Deskripsi:</h6>
         <p class="mb-4">{{ $report->description }}</p>
         
+        {{-- === BAGIAN LAMPIRAN YANG DISEMPURNAKAN === --}}
         @if($report->files->count() > 0)
         <h6 class="fw-bold">Lampiran:</h6>
         <div class="row">
             @foreach($report->files as $file)
-                <div class="col-md-3 mb-3">
-                    <div class="card">
-                        @if(in_array(strtolower(pathinfo($file->filename, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif']))
-                            <img src="{{ Storage::url($file->path) }}" class="card-img-top" alt="{{ $file->filename }}" style="height: 150px; object-fit: cover;">
+                <div class="col-xl-3 col-lg-4 col-md-6 mb-4">
+                    <div class="card h-100">
+                        @if(Str::startsWith($file->type, 'image/'))
+                            {{-- JIKA GAMBAR, BUAT AGAR BISA DIKLIK (LIGHTBOX) --}}
+                            <a href="{{ Storage::url($file->path) }}" data-lightbox="report-gallery" data-title="{{ $file->filename }}">
+                                <img src="{{ Storage::url($file->path) }}" class="card-img-top" alt="{{ $file->filename }}" style="height: 180px; object-fit: cover; cursor: pointer;">
+                            </a>
+                            <div class="card-body p-3 text-center">
+                                <p class="card-text small text-truncate" title="{{ $file->filename }}">{{ $file->filename }}</p>
+                                <a href="{{ Storage::url($file->path) }}" class="btn btn-sm btn-outline-primary" target="_blank">Lihat Full</a>
+                            </div>
                         @else
-                            <div class="card-img-top bg-light d-flex align-items-center justify-content-center" style="height: 150px;">
-                                <i class="fas fa-file fa-3x text-secondary"></i>
+                            {{-- JIKA DOKUMEN --}}
+                            <div class="card-body d-flex flex-column justify-content-center align-items-center h-100 text-center p-3">
+                                <i class="fas fa-file-alt fa-4x text-secondary mb-3"></i>
+                                <p class="card-text small text-truncate" title="{{ $file->filename }}">{{ $file->filename }}</p>
+                                <a href="{{ Storage::url($file->path) }}" class="btn btn-sm btn-primary mt-2" target="_blank">
+                                    <i class="fas fa-download me-1"></i> Download
+                                </a>
                             </div>
                         @endif
-                        <div class="card-body p-2">
-                            <p class="card-text small text-truncate">{{ $file->filename }}</p>
-                            <a href="{{ Storage::url($file->path) }}" class="btn btn-sm btn-primary" target="_blank">Lihat</a>
-                        </div>
                     </div>
                 </div>
             @endforeach
@@ -74,7 +85,7 @@
         @endif
         
         @if($user->isAdmin())
-        <div class="mt-4">
+        <div class="mt-4 pt-3 border-top">
             <h6 class="fw-bold">Update Status:</h6>
             <form action="{{ route('reports.update-status', $report) }}" method="POST" class="row g-3">
                 @csrf
@@ -88,7 +99,7 @@
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <button type="submit" class="btn btn-primary">Update Status</button>
+                    <button type="submit" class="btn btn-primary">Update</button>
                 </div>
             </form>
         </div>
@@ -96,42 +107,48 @@
     </div>
 </div>
 
-<!-- Comments Section -->
 <div class="card">
     <div class="card-header">
         <h5 class="mb-0">Komentar ({{ $report->comments->count() }})</h5>
     </div>
     <div class="card-body">
-        @if($report->comments->count() > 0)
-            <div class="comments-list mb-4">
-                @foreach($report->comments as $comment)
-                    <div class="comment mb-3 p-3 {{ $comment->user->isAdmin() ? 'bg-light' : 'border-start border-4 border-primary' }}">
-                        <div class="d-flex justify-content-between">
-                            <h6 class="mb-1">
-                                {{ $comment->user->name }}
-                                @if($comment->user->isAdmin())
-                                    <span class="badge bg-primary">Admin</span>
-                                @endif
-                            </h6>
-                            <small class="text-muted">{{ $comment->created_at->format('d M Y H:i') }}</small>
-                        </div>
-                        <p class="mb-0">{{ $comment->content }}</p>
-                    </div>
-                @endforeach
+        @forelse($report->comments as $comment)
+            <div class="comment mb-3 p-3 {{ $comment->user->isAdmin() ? 'bg-light rounded' : 'border-start border-4 border-primary' }}">
+                <div class="d-flex justify-content-between">
+                    <h6 class="mb-1 fw-bold">
+                        {{ $comment->user->name }}
+                        @if($comment->user->isAdmin())
+                            <span class="badge bg-primary ms-1">Admin</span>
+                        @endif
+                    </h6>
+                    <small class="text-muted">{{ $comment->created_at->diffForHumans() }}</small>
+                </div>
+                <p class="mb-0">{{ $comment->content }}</p>
             </div>
-        @else
+        @empty
             <p class="text-center text-muted my-4">Belum ada komentar.</p>
-        @endif
+        @endforelse
         
-        <!-- Add Comment Form -->
+        <hr>
         <form action="{{ route('reports.comments.store', $report) }}" method="POST">
             @csrf
             <div class="mb-3">
                 <label for="content" class="form-label">Tambahkan Komentar</label>
-                <textarea class="form-control" id="content" name="content" rows="3" required></textarea>
+                <textarea class="form-control" id="content" name="content" rows="3" required placeholder="Tulis komentar Anda..."></textarea>
             </div>
             <button type="submit" class="btn btn-primary">Kirim Komentar</button>
         </form>
     </div>
 </div>
+
 @endsection
+
+@push('styles')
+{{-- Tambahkan ini untuk Lightbox Gallery --}}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.3/css/lightbox.min.css">
+@endpush
+
+@push('scripts')
+{{-- Tambahkan ini untuk Lightbox Gallery --}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lightbox2/2.11.3/js/lightbox.min.js"></script>
+@endpush

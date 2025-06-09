@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Models\Report;
-use App\Models\Comment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class ReportController extends Controller
 {
+    // ... method index, create, show, edit (tidak ada perubahan) ...
+
     /**
      * Display a listing of reports.
      */
@@ -19,12 +21,10 @@ class ReportController extends Controller
         $user = Auth::user();
         $query = Report::with(['user', 'comments']);
 
-        // If not admin, only show user's reports
         if (!$user->isAdmin()) {
             $query->where('user_id', $user->id);
         }
 
-        // Apply filters
         if ($request->filled('search')) {
             $query->where(function($q) use ($request) {
                 $q->where('title', 'like', '%' . $request->search . '%')
@@ -50,8 +50,7 @@ class ReportController extends Controller
      */
     public function create()
     {
-        $user = Auth::user();
-        return view('reports.create', compact('user'));
+        return view('reports.create');
     }
 
     /**
@@ -64,7 +63,8 @@ class ReportController extends Controller
             'description' => 'required|string',
             'category' => 'required|string',
             'location' => 'nullable|string|max:255',
-            'files.*' => 'nullable|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
+            'files' => 'nullable|array',
+            'files.*' => 'file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
         ]);
 
         $report = Report::create([
@@ -76,10 +76,12 @@ class ReportController extends Controller
             'status' => 'pending',
         ]);
 
-        // Handle file uploads
         if ($request->hasFile('files')) {
             foreach ($request->file('files') as $file) {
-                $path = $file->store('reports', 'public');
+                // === PERUBAHAN DI SINI ===
+                // Mengubah 'reports' menjadi 'images'
+                $path = $file->store('images', 'public');
+                
                 $report->files()->create([
                     'filename' => $file->getClientOriginalName(),
                     'path' => $path,
@@ -99,9 +101,8 @@ class ReportController extends Controller
         $user = Auth::user();
         $report->load(['user', 'comments.user', 'files']);
         
-        // Check if user can view this report
-        if (!$user->isAdmin() && $report->user_id !== Auth::id()) {
-            abort(403);
+        if (!$user->isAdmin() && $report->user_id !== $user->id) {
+            abort(403, 'ANDA TIDAK MEMILIKI AKSES UNTUK MELIHAT LAPORAN INI.');
         }
 
         return view('reports.show', compact('report', 'user'));
@@ -112,34 +113,20 @@ class ReportController extends Controller
      */
     public function edit(Report $report)
     {
-        $user = Auth::user();
-        
-        // Only report owner can edit and only if pending
         if ($report->user_id !== Auth::id() || $report->status !== 'pending') {
-            abort(403);
+            abort(403, 'LAPORAN TIDAK DAPAT DIEDIT.');
         }
 
-        return view('reports.edit', compact('report', 'user'));
+        return view('reports.edit', compact('report'));
     }
 
     /**
-     * Menampilkan laporan dari pengguna tertentu.
-     */
-    public function Reports(User $user)
-    {
-        // Ambil laporan yang terkait dengan pengguna
-        $reports = Report::where('user_id', $user->id)->get();
-        return view('reports.user', compact('user', 'reports'));
-    }
-
-    /**
-     * Update the specified report.
+     * Update the specified report in storage.
      */
     public function update(Request $request, Report $report)
     {
-        // Only report owner can update (and only if pending)
         if ($report->user_id !== Auth::id() || $report->status !== 'pending') {
-            abort(403);
+            abort(403, 'LAPORAN TIDAK DAPAT DIPERBARUI.');
         }
 
         $request->validate([
@@ -147,61 +134,74 @@ class ReportController extends Controller
             'description' => 'required|string',
             'category' => 'required|string',
             'location' => 'nullable|string|max:255',
+            'files' => 'nullable|array',
+            'files.*' => 'file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048',
+            'delete_files' => 'nullable|array'
         ]);
 
         $report->update($request->only(['title', 'description', 'category', 'location']));
 
-        return redirect()->route('reports.index')->with('success', 'Laporan berhasil diperbarui!');
-    }
-
-    /**
-     * Remove the specified report.
-     */
-    public function destroy(Report $report)
-    {
-        // Only report owner can delete (and only if pending)
-        if ($report->user_id !== Auth::id() || $report->status !== 'pending') {
-            abort(403);
+        if ($request->has('delete_files')) {
+            foreach ($report->files as $file) {
+                if (in_array($file->id, $request->delete_files)) {
+                    Storage::disk('public')->delete($file->path);
+                    $file->delete();
+                }
+            }
         }
 
-        // Delete associated files
+        if ($request->hasFile('files')) {
+            foreach ($request->file('files') as $file) {
+                // === PERUBAHAN DI SINI JUGA ===
+                // Mengubah 'reports' menjadi 'images' agar konsisten
+                $path = $file->store('images', 'public');
+
+                $report->files()->create([
+                    'filename' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'type' => $file->getClientMimeType(),
+                ]);
+            }
+        }
+
+        return redirect()->route('reports.index')->with('success', 'Laporan berhasil diperbarui!');
+    }
+    
+    // ... method destroy dan lainnya (tidak ada perubahan) ...
+    public function destroy(Report $report)
+    {
+        if ($report->user_id !== Auth::id() || $report->status !== 'pending') {
+            abort(403, 'LAPORAN TIDAK DAPAT DIHAPUS.');
+        }
+
         foreach ($report->files as $file) {
             Storage::disk('public')->delete($file->path);
         }
-
+        
+        $report->files()->delete();
         $report->delete();
 
         return redirect()->route('reports.index')->with('success', 'Laporan berhasil dihapus!');
     }
-
-    /**
-     * Update report status (Admin only)
-     */
+    
     public function updateStatus(Request $request, Report $report)
     {
         if (!Auth::user()->isAdmin()) {
-            abort(403);
+            abort(403, 'HANYA ADMIN YANG DAPAT MENGUBAH STATUS.');
         }
 
         $request->validate([
-            'status' => 'required|in:pending,in-progress,resolved,rejected',
+            'status' => ['required', Rule::in(['pending', 'in-progress', 'resolved', 'rejected'])],
         ]);
 
-        $report->update([
-            'status' => $request->status,
-        ]);
+        $report->update(['status' => $request->status]);
 
         return back()->with('success', 'Status laporan berhasil diperbarui!');
     }
-
-    /**
-     * Store a comment for the report.
-     */
+    
     public function storeComment(Request $request, Report $report)
     {
-        $request->validate([
-            'content' => 'required|string',
-        ]);
+        $request->validate(['content' => 'required|string']);
 
         $report->comments()->create([
             'content' => $request->content,
@@ -209,5 +209,11 @@ class ReportController extends Controller
         ]);
 
         return back()->with('success', 'Komentar berhasil ditambahkan!');
+    }
+
+    public function userReports(User $user)
+    {
+        $reports = Report::where('user_id', $user->id)->latest()->get();
+        return view('reports.user', compact('user', 'reports'));
     }
 }
